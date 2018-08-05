@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -278,14 +279,6 @@ public class VirtualNodeServiceExtension extends VirtualSpringBeanExtension<Node
         if ((Reference.fromNodeRef(parentRef) != null) && !isVirtualContextFolder(parentRef,
                                                                         environment))
         {
-            // CM-533 Suppress options to create folders in a virtual folder
-            // (repo)
-            if (environment.isSubClass(nodeTypeQName,
-                                       ContentModel.TYPE_FOLDER))
-            {
-                throw new VirtualizationException("The creation of folders within virtual folders is disabled.");
-            }
-
             try
             {
                 Reference parentReference = Reference.fromNodeRef(parentRef);
@@ -1089,13 +1082,86 @@ public class VirtualNodeServiceExtension extends VirtualSpringBeanExtension<Node
     public ChildAssociationRef moveNode(NodeRef nodeToMoveRef, NodeRef newParentRef, QName assocTypeQName,
                 QName assocQName)
     {
-        if ((Reference.fromNodeRef(nodeToMoveRef) != null)|| (Reference.fromNodeRef(newParentRef) != null))
+        NodeRef actualNodeToMove = smartStore.materializeIfPossible(nodeToMoveRef);
+        if (Reference.fromNodeRef(actualNodeToMove) != null)
         {
-            throw new UnsupportedOperationException("Unsuported operation for virtual source or destination");
+            throw new UnsupportedOperationException("Unsuported operation for virtual source");
+        }
+
+        NodeServiceTrait theTrait = getTrait();
+        if (Reference.fromNodeRef(newParentRef) != null && !isVirtualContextFolder(newParentRef,
+                                                                                environment))
+        {
+            QName nodeTypeQName = theTrait.getType(actualNodeToMove);
+
+            try
+            {
+                Reference parentReference = Reference.fromNodeRef(newParentRef);
+                FilingData filingData = smartStore.createFilingData(parentReference,
+                                                                                assocTypeQName,
+                                                                                assocQName,
+                                                                                nodeTypeQName,
+                                                                                Collections.emptyMap());
+
+                NodeRef filingNodeRef = filingData.getFilingNodeRef();
+                QName filingNodeTypeQName = filingData.getNodeTypeQName();
+                QName filingAssocTypeQName = filingData.getAssocTypeQName();
+                QName filingAssocQName = filingData.getAssocQName();
+
+                if (filingNodeRef != null)
+                {
+                    ChildAssociationRef oldChildAssocRef = theTrait.getPrimaryParent(actualNodeToMove);
+
+                    // perform physical move only if necessary
+                    if (!filingNodeRef.equals(oldChildAssocRef.getParentRef()) 
+                            || !filingAssocTypeQName.equals(oldChildAssocRef.getTypeQName())
+                            || !filingAssocQName.equals(oldChildAssocRef.getQName()))
+                    {
+                        theTrait.moveNode(actualNodeToMove, filingNodeRef, filingAssocTypeQName,
+                                                                                filingAssocQName);
+                    }
+                    
+                    if (!nodeTypeQName.equals(filingNodeTypeQName))
+                    {
+                        theTrait.setType(actualNodeToMove, filingNodeTypeQName);
+                    }
+
+                    Map<QName, Serializable> filingDataProperties = filingData.getProperties();
+                    theTrait.addProperties(actualNodeToMove, filingDataProperties);
+                    
+                    Set<QName> aspects = filingData.getAspects();
+                    for (QName aspect : aspects)
+                    {
+                        theTrait.addAspect(actualNodeToMove, aspect, filingDataProperties);
+                    }
+
+                    Reference nodeProtocolChildRef = NodeProtocol.newReference(actualNodeToMove,
+                                                                                parentReference);
+                    QName vChildAssocQName = QName
+                                .createQNameWithValidLocalName(VirtualContentModel.VIRTUAL_CONTENT_MODEL_1_0_URI,
+                                                               filingAssocQName.getLocalName());
+                    ChildAssociationRef childAssocRef = new ChildAssociationRef(filingAssocTypeQName,
+                                                                                newParentRef,
+                                                                                vChildAssocQName,
+                                                                                nodeProtocolChildRef.toNodeRef());
+
+                    return childAssocRef;
+                }
+                else
+                {
+                    throw new InvalidNodeRefException("Can not move node to parent ", newParentRef);
+                }
+            }
+            catch (VirtualizationException e)
+            {
+                throw new InvalidNodeRefException("Could not move node into virtual context.",
+                                                  newParentRef,
+                                                  e);
+            }
         }
         else
         {
-            return getTrait().moveNode(nodeToMoveRef,
+            return theTrait.moveNode(nodeToMoveRef,
                                        newParentRef,
                                        assocTypeQName,
                                        assocQName);

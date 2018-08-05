@@ -161,9 +161,6 @@
             </property>
             <property name="denyQueryNodes">
                <set>
-                  <value>ChangePermissions</value>
-                  <value>DeleteNode</value>
-                  <value>Delete</value>
                </set>
             </property>
          </bean>

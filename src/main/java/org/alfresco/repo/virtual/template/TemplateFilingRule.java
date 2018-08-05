@@ -107,34 +107,13 @@ public class TemplateFilingRule implements FilingRule
             fType = QName.createQName(type,
                                       nsPrefixResolver);
 
-            // CM-528 acceptance criteria 3 :
-            // Given that the current user can upload new content into a
-            // specific virtual folder (filing rule)
-            // when a filing rule specifies a type or sub type of cm:folder
-            // (which is a non supported configuration)
-            // uploading content will create a document, not a folder
-
-            if (env.isSubClass(fType,
-                               ContentModel.TYPE_FOLDER))
-            {
-                if (logger.isDebugEnabled())
-                {
-                    logger.debug("CM-528 acceptance criteria 3 : we deny the creation of folders subtype " + fType
-                                + " and force cm:content instead.");
-                }
-                fType = ContentModel.TYPE_CONTENT;
-            }
-
-            // Explicit type matching follows.
-            // It might cause non-transactional behavior.
-            // To avoid it we rely on folder creation exclusion in
-            // VirtualNodeServiceExtension#createNode
-            // See CM-533 Suppress options to create folders in a virtual folder
-
-            if (env.isSubClass(nodeTypeQName,
-                               fType))
+            if (env.isSubClass(nodeTypeQName, fType))
             {
                 fType = nodeTypeQName;
+            }
+            else if (!env.isSubClass(fType, nodeTypeQName))
+            {
+                throw new VirtualizationException("The filing rule for the virtual folder specifies an incompatible node type.");
             }
         }
 

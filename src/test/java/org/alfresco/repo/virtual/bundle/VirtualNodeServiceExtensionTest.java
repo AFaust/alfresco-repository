@@ -58,11 +58,15 @@ import org.alfresco.repo.virtual.ref.Protocols;
 import org.alfresco.repo.virtual.ref.Reference;
 import org.alfresco.repo.virtual.ref.VirtualProtocol;
 import org.alfresco.repo.virtual.store.VirtualStore;
+import org.alfresco.service.cmr.model.FileInfo;
 import org.alfresco.service.cmr.repository.AssociationRef;
 import org.alfresco.service.cmr.repository.ChildAssociationRef;
 import org.alfresco.service.cmr.repository.CopyService;
+import org.alfresco.service.cmr.repository.InvalidNodeRefException;
 import org.alfresco.service.cmr.repository.NodeRef;
 import org.alfresco.service.cmr.repository.Path;
+import org.alfresco.service.cmr.security.AccessStatus;
+import org.alfresco.service.cmr.security.PermissionService;
 import org.alfresco.service.namespace.NamespaceService;
 import org.alfresco.service.namespace.QName;
 import org.alfresco.service.namespace.QNamePattern;
@@ -192,7 +196,7 @@ public class VirtualNodeServiceExtensionTest extends VirtualizationIntegrationTe
     }
 
     @Test
-    public void testCreateNode_CM_528_folder_filing_type() throws Exception
+    public void testCreateNode_incompatible_filing_type() throws Exception
     {
         NodeRef testTemplate5 = createVirtualizedFolder(testRootFolder.getNodeRef(),
                                                         "aVFTestTemplate5",
@@ -201,13 +205,17 @@ public class VirtualNodeServiceExtensionTest extends VirtualizationIntegrationTe
                                                                   ContentModel.ASSOC_CONTAINS,
                                                                   "FolderFilingType");
 
-        ChildAssociationRef forcedCmContentAssocRef = createContent(folderFilingTypeNode,
-                                                                    "forcedCmContent");
-        NodeRef forcedCmContent = forcedCmContentAssocRef.getChildRef();
-
-        QName actualType = nodeService.getType(forcedCmContent);
-        assertEquals(ContentModel.TYPE_CONTENT,
-                     actualType);
+        try
+        {
+            createContent(folderFilingTypeNode, "incompatibleFilingType");
+            fail("Should not be able to create cm:content with filing rule set to cm:folder");
+        }
+        catch (InvalidNodeRefException e)
+        {
+            assertEquals("Could not create node in virtual context.", e.getMessage());
+            logger.info("Successfully denied creation of incompatible node type",
+                        e);
+        }
     }
 
     @Test
@@ -1290,6 +1298,75 @@ public class VirtualNodeServiceExtensionTest extends VirtualizationIntegrationTe
         {
             resetMocks();
         }
+    }
+    
+    @Test
+    public void testMoveNode_existingNodeIntoVirtualFolderWithPropertyUpdate()
+    {
+        FileInfo normalFolder = fileAndFolderService.create(companyHomeNodeRef,
+                                                                    "normal-folder",
+                                                                    ContentModel.TYPE_FOLDER);
+        FileInfo normalFile = fileAndFolderService.create(normalFolder.getNodeRef(),
+                                                                    "regular-file.txt",
+                                                                    ContentModel.TYPE_CONTENT);
+        NodeRef testTemplate1 = createVirtualizedFolder(testRootFolder.getNodeRef(),
+                                                                    "aVFTestTemplate1",
+                                                                    TEST_TEMPLATE_1_JSON_SYS_PATH);
+        NodeRef virtualFolderNode = nodeService.getChildByName(testTemplate1,
+                                                                    ContentModel.ASSOC_CONTAINS,
+                                                                    "Node1");
+        
+        ChildAssociationRef oldFilePrimaryParent = nodeService.getPrimaryParent(normalFile.getNodeRef());
+        nodeService.moveNode(normalFile.getNodeRef(), virtualFolderNode,
+                                                                    oldFilePrimaryParent.getTypeQName(),
+                                                                    oldFilePrimaryParent.getQName());
+        assertNotNull(nodeService.getChildByName(virtualFolderNode, ContentModel.ASSOC_CONTAINS,
+                                                                    "regular-file.txt"));
+        
+        String description = (String) nodeService.getProperty(normalFile.getNodeRef(),
+                                                                    ContentModel.PROP_DESCRIPTION);
+        assertEquals("TheNode1", description);
+    }
+
+    @Test
+    public void testMoveNode_existingNodeBetweenVirtualFoldersWithPropertyAndAspectUpdates()
+    {
+        NodeRef testTemplate1 = createVirtualizedFolder(testRootFolder.getNodeRef(),
+                                                                    "aVFTestTemplate1",
+                                                                    TEST_TEMPLATE_1_JSON_SYS_PATH);
+        NodeRef virtualFolderNode1 = nodeService.getChildByName(testTemplate1,
+                                                                    ContentModel.ASSOC_CONTAINS,
+                                                                    "Node1");
+        assertNotNull(virtualFolderNode1);
+        NodeRef virtualFolderNode2 = nodeService.getChildByName(testTemplate1,
+                                                                    ContentModel.ASSOC_CONTAINS,
+                                                                    "Node2");
+        assertNotNull(virtualFolderNode2);
+        NodeRef virtualFolderNode2_1 = nodeService.getChildByName(virtualFolderNode2,
+                                                                    ContentModel.ASSOC_CONTAINS,
+                                                                    "Node2_1");
+        assertNotNull(virtualFolderNode2_1);
+        
+        ChildAssociationRef nodeToMoveChildRef = createContent(virtualFolderNode1, "nodeToMove");
+        NodeRef nodeToMoveRef = nodeToMoveChildRef.getChildRef();
+        String description1 = (String) nodeService.getProperty(nodeToMoveRef,
+                                                                    ContentModel.PROP_DESCRIPTION);
+        assertEquals("TheNode1", description1);
+        assertFalse(nodeService.hasAspect(nodeToMoveRef, ContentModel.ASPECT_AUTHOR));
+        assertFalse(nodeService.hasAspect(nodeToMoveRef, ContentModel.ASPECT_DUBLINCORE));
+        
+        ChildAssociationRef movedNodeChildRef = nodeService.moveNode(nodeToMoveRef, virtualFolderNode2_1,
+                                                                    nodeToMoveChildRef.getTypeQName(),
+                                                                    nodeToMoveChildRef.getQName());
+        
+        NodeRef movedNodeRef = movedNodeChildRef.getChildRef();
+        String description2_1 = (String) nodeService.getProperty(movedNodeRef, ContentModel.PROP_DESCRIPTION);
+        assertEquals("Node2_1Desc", description2_1);
+        assertTrue(nodeService.hasAspect(movedNodeRef, ContentModel.ASPECT_AUTHOR));
+        assertTrue(nodeService.hasAspect(movedNodeRef, ContentModel.ASPECT_DUBLINCORE));
+
+        assertNotNull(nodeService.getChildByName(virtualFolderNode2_1, ContentModel.ASSOC_CONTAINS,
+                "nodeToMove"));
     }
 
     private NodeRef createDownloadNode()
