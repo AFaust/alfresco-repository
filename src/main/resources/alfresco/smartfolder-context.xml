@@ -130,16 +130,6 @@
          <bean id="smartUserPermissions" class="org.alfresco.repo.virtual.store.VirtualUserPermissions"  init-method="init">
             <property name="denyReadonlySmartNodes">
                <set>
-                  <value>Unlock</value>
-                  <value>CancelCheckOut</value>
-                  <value>ChangePermissions</value>
-                  <value>CreateChildren</value>
-                  <value>Delete</value>
-                  <value>DeleteNode</value>
-                  <value>Write</value>
-                  <value>WriteProperties</value>
-                  <value>WriteContent</value>
-                  <value>CreateAssociations</value>
                </set>
             </property>
             <property name="allowSmartNodes">
@@ -148,11 +138,6 @@
             </property>
             <property name="denySmartNodes">
                <set>
-                  <value>ChangePermissions</value>
-                  <value>WriteProperties</value>
-                  <value>DeleteNode</value>
-                  <value>Delete</value>
-                  <value>Write</value>
                </set>
             </property>
             <property name="allowQueryNodes">
